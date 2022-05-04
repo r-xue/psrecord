@@ -25,6 +25,9 @@
 
 
 import argparse
+
+from pathlib import Path
+import subprocess
 import sys
 import time
 
@@ -99,6 +102,10 @@ def main():
     )
 
     parser.add_argument("--include-io", help="include include_io I/O stats", action="store_true")
+             
+    parser.add_argument('--directory', type=str,
+                        help='include the working directory disk usage in statistics (results '
+                             'in a slower maximum sampling rate).')                        
 
     args = parser.parse_args()
 
@@ -124,6 +131,7 @@ def main():
         include_children=args.include_children,
         include_io=args.include_io,
         log_format=args.log_format,
+        directory=args.directory,
     )
 
     if sprocess is not None:
@@ -139,7 +147,9 @@ def monitor(
     include_children=False,
     include_io=False,
     log_format="plain",
+    directory=None,
 ):
+
     # We import psutil here so that the module can be imported even if psutil
     # is not present (for example if accessing the version)
     import psutil
@@ -175,6 +185,8 @@ def monitor(
                         "Write bytes".center(12),
                     )
                 )
+            if directory:
+                f.write(" {:12s}".format("Dir size (MB)".center(12)))
         elif log_format == "csv":
             f.write("elapsed_time,nproc,cpu,mem_real,mem_virtual")
             if include_io:
@@ -267,6 +279,14 @@ def monitor(
                             f" {read_count:12d} {write_count:12d}"
                             f" {read_bytes:12d} {write_bytes:12d}"
                         )
+                    if directory:
+                        try:
+                            # If the directory content is actively changing, the filescan and size calculation might fail.
+                            current_dir = sum(file.stat().st_size for file in Path(directory).rglob('*')) / 1024.**2
+                            f.write(" {4:12.3f}".format(current_dir))
+                            f.flush()
+                        except (FileNotFoundError, subprocess.CalledProcessError):
+                            pass                        
                 elif log_format == "csv":
                     f.write(
                         f"{elapsed_time},{n_proc},{current_cpu},{current_mem_real},{current_mem_virtual}"
