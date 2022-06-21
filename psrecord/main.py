@@ -130,12 +130,16 @@ def monitor(pid, logfile=None, plot=None, duration=None, interval=None,
         
         f = open(logfile, 'w')
         if directory:
-            f.write("# {0:12s} {1:12s} {2:12s} {3:12s} {4:12s}\n".format(
+            f.write("# {0:12s} {1:12s} {2:12s} {3:12s} {4:12s} {5:12s} {6:12s} {7:12s} {8:12s}\n".format(
                 'Elapsed time'.center(12),
                 'CPU (%)'.center(12),
                 'Real (MB)'.center(12),
                 'Virtual (MB)'.center(12),
-                'Dir (MB)'.center(12)),
+                'Dir (MB)'.center(12),
+                'Read_Count'.center(12),
+                'Write_Count'.center(12),
+                'Read_IO (MB)'.center(12),
+                'Write_IO (MB)'.center(12))
             )
         else:
             f.write("# {0:12s} {1:12s} {2:12s} {3:12s}\n".format(
@@ -156,57 +160,74 @@ def monitor(pid, logfile=None, plot=None, duration=None, interval=None,
         # Start main event loop
         while True:
 
-            # Find current time
-            current_time = time.time()
+            with pr.oneshot():
+                # Find current time
+                current_time = time.time()
 
-            try:
-                pr_status = pr.status()
-            except TypeError:  # psutil < 2.0
-                pr_status = pr.status
-            except psutil.NoSuchProcess:  # pragma: no cover
-                break
+                try:
+                    pr_status = pr.status()
+                except TypeError:  # psutil < 2.0
+                    pr_status = pr.status
+                except psutil.NoSuchProcess:  # pragma: no cover
+                    break
 
-            # Check if process status indicates we should exit
-            if pr_status in [psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD]:
-                print("Process finished ({0:.2f} seconds)"
-                      .format(current_time - start_time))
-                break
+                # Check if process status indicates we should exit
+                if pr_status in [psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD]:
+                    print("Process finished ({0:.2f} seconds)"
+                        .format(current_time - start_time))
+                    break
 
-            # Check if we have reached the maximum time
-            if duration is not None and current_time - start_time > duration:
-                break
+                # Check if we have reached the maximum time
+                if duration is not None and current_time - start_time > duration:
+                    break
 
-            # Get current CPU and memory
-            try:
-                current_cpu = get_percent(pr)
-                current_mem = get_memory(pr)
-            except Exception:
-                break
-            current_mem_real = current_mem.rss / 1024. ** 2
-            current_mem_virtual = current_mem.vms / 1024. ** 2
+                # Get current CPU and memory
+                try:
+                    current_cpu = pr.cpu_percent()
+                    current_mem = pr.memory_info()
+                    current_pio = pr.io_counters()
+                except Exception:
+                    break
+                current_mem_real = current_mem.rss / 1024. ** 2
+                current_mem_virtual = current_mem.vms / 1024. ** 2
+                current_read_count = current_pio.read_count
+                current_write_count = current_pio.write_count
+                current_read_bytes = current_pio.read_bytes
+                current_write_bytes = current_pio.write_bytes                
 
-            # Get information for children
-            if include_children:
-                for child in all_children(pr):
-                    try:
-                        current_cpu += get_percent(child)
-                        current_mem = get_memory(child)
-                    except Exception:
-                        continue
-                    current_mem_real += current_mem.rss / 1024. ** 2
-                    current_mem_virtual += current_mem.vms / 1024. ** 2
+
+                # Get information for children
+                if include_children:
+                    for child in all_children(pr):
+                        with child.oneshot():
+                            try:
+                                current_cpu += child.cpu_percent()
+                                current_mem = child.memory_info()
+                                current_pio = child.io_counters()
+                            except Exception:
+                                continue
+                            current_mem_real += current_mem.rss / 1024. ** 2
+                            current_mem_virtual += current_mem.vms / 1024. ** 2
+                            current_read_count += current_pio.read_count
+                            current_write_count += current_pio.write_count
+                            current_read_bytes += current_pio.read_bytes / 1024. ** 2
+                            current_write_bytes += current_pio.write_bytes / 1024. ** 2
 
             if logfile:
                 if directory:
                     try:
                         # If the directory content is actively changing, the filescan and size calculation might fail.
                         current_dir = sum(file.stat().st_size for file in Path(directory).rglob('*')) / 1024.**2
-                        f.write("{0:12.3f} {1:12.3f} {2:12.3f} {3:12.3f} {4:12.3f}\n".format(
+                        f.write("{0:12.3f} {1:12.3f} {2:12.3f} {3:12.3f} {4:12.3f} {5:12.0f} {6:12.0f} {7:12.3f} {8:12.3f}\n".format(
                             current_time - start_time,
                             current_cpu,
                             current_mem_real,
                             current_mem_virtual,
-                            current_dir))
+                            current_dir,
+                            current_read_count,
+                            current_write_count,
+                            current_read_bytes,
+                            current_write_bytes))
                         f.flush()
                     except (FileNotFoundError, subprocess.CalledProcessError):
                         pass
