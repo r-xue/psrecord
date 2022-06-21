@@ -212,61 +212,66 @@ def monitor(
     try:
         # Start main event loop
         while True:
-            # Find current time
-            current_time = time.time()
-            elapsed_time = current_time - start_time
+            
+            with pr.oneshot():
 
-            try:
-                pr_status = pr.status()
-            except TypeError:  # psutil < 2.0
-                pr_status = pr.status
-            except psutil.NoSuchProcess:  # pragma: no cover
-                break
+                # Find current time
+                current_time = time.time()
+                elapsed_time = current_time - start_time
 
-            # Check if process status indicates we should exit
-            if pr_status in [psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD]:
-                print(f"Process finished ({elapsed_time:.2f} seconds)")
-                break
+                try:
+                    pr_status = pr.status()
+                except TypeError:  # psutil < 2.0
+                    pr_status = pr.status
+                except psutil.NoSuchProcess:  # pragma: no cover
+                    break
 
-            # Check if we have reached the maximum time
-            if duration is not None and elapsed_time > duration:
-                break
+                # Check if process status indicates we should exit
+                if pr_status in [psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD]:
+                    print(f"Process finished ({elapsed_time:.2f} seconds)")
+                    break
 
-            # Get current CPU and memory
-            try:
-                current_cpu = get_percent(pr)
-                current_mem = get_memory(pr)
-            except Exception:
-                break
-            current_mem_real = current_mem.rss / 1024.0**2
-            current_mem_virtual = current_mem.vms / 1024.0**2
+                # Check if we have reached the maximum time
+                if duration is not None and elapsed_time > duration:
+                    break
 
-            if include_io:
-                counters = pr.io_counters()
-                read_count = counters.read_count
-                write_count = counters.write_count
-                read_bytes = counters.read_bytes
-                write_bytes = counters.write_bytes
+                # Get current CPU and memory
+                try:
+                    current_cpu = get_percent(pr)
+                    current_mem = get_memory(pr)
+                except Exception:
+                    break
+                current_mem_real = current_mem.rss / 1024.0**2
+                current_mem_virtual = current_mem.vms / 1024.0**2
 
-            n_proc = 1
+                if include_io:
+                    counters = pr.io_counters()
+                    read_count = counters.read_count
+                    write_count = counters.write_count
+                    read_bytes = counters.read_bytes
+                    write_bytes = counters.write_bytes
 
-            # Get information for children
-            if include_children:
-                for child in all_children(pr):
-                    try:
-                        current_cpu += get_percent(child)
-                        current_mem = get_memory(child)
-                        current_mem_real += current_mem.rss / 1024.0**2
-                        current_mem_virtual += current_mem.vms / 1024.0**2
-                        if include_io:
-                            counters = child.io_counters()
-                            read_count += counters.read_count
-                            write_count += counters.write_count
-                            read_bytes += counters.read_bytes
-                            write_bytes += counters.write_bytes
-                        n_proc += 1
-                    except Exception:
-                        continue
+                n_proc = 1
+
+                # Get information for children
+                if include_children:
+                    for child in all_children(pr):
+                        with child.oneshot():
+                            try:
+                                current_cpu += child.cpu_percent()
+                                current_mem = child.memory_info()
+                                current_mem_real += current_mem.rss / 1024.0**2
+                                current_mem_virtual += current_mem.vms / 1024.0**2
+                                if include_io:
+                                    counters = child.io_counters()
+                                    read_count += counters.read_count
+                                    write_count += counters.write_count
+                                    read_bytes += counters.read_bytes
+                                    write_bytes += counters.write_bytes
+                                n_proc += 1
+                            except Exception:
+                                continue
+
 
             if logfile:
                 if log_format == "plain":
@@ -294,7 +299,7 @@ def monitor(
                     if include_io:
                         f.write(f",{read_count},{write_count},{read_bytes},{write_bytes}")
                 f.write("\n")
-                f.flush()
+                f.flush()   
 
             if interval is not None:
                 time.sleep(interval)
