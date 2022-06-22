@@ -166,8 +166,6 @@ def monitor(pid, logfile=None, plot=None, duration=None, interval=None,
 
                 try:
                     pr_status = pr.status()
-                except TypeError:  # psutil < 2.0
-                    pr_status = pr.status
                 except psutil.NoSuchProcess:  # pragma: no cover
                     break
 
@@ -193,8 +191,7 @@ def monitor(pid, logfile=None, plot=None, duration=None, interval=None,
                 current_read_count = current_pio.read_count
                 current_write_count = current_pio.write_count
                 current_read_bytes = current_pio.read_bytes
-                current_write_bytes = current_pio.write_bytes                
-
+                current_write_bytes = current_pio.write_bytes
 
                 # Get information for children
                 if include_children:
@@ -203,16 +200,18 @@ def monitor(pid, logfile=None, plot=None, duration=None, interval=None,
                             try:
                                 current_cpu += child.cpu_percent()
                                 current_mem = child.memory_info()
-                                current_pio = child.io_counters()
-                            except Exception:
-                                continue
-                            current_mem_real += current_mem.rss / 1024. ** 2
-                            current_mem_virtual += current_mem.vms / 1024. ** 2
-                            current_read_count += current_pio.read_count
-                            current_write_count += current_pio.write_count
-                            current_read_bytes += current_pio.read_bytes / 1024. ** 2
-                            current_write_bytes += current_pio.write_bytes / 1024. ** 2
-
+                                current_mem_real += current_mem.rss / 1024. ** 2
+                                current_mem_virtual += current_mem.vms / 1024. ** 2
+                                child.io_counters_cached = child.io_counters()
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                pass
+                            finally:
+                                if hasattr(child, 'io_counters_cached'):
+                                    current_read_count += child.io_counters_cached.read_count
+                                    current_write_count += child.io_counters_cached.write_count
+                                    current_read_bytes += child.io_counters_cached.read_bytes / 1024. ** 2
+                                    current_write_bytes += child.io_counters_cached.write_bytes / 1024. ** 2
+                                                    
             if logfile:
                 if directory:
                     try:
