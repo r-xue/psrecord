@@ -221,8 +221,6 @@ def monitor(
 
                 try:
                     pr_status = pr.status()
-                except TypeError:  # psutil < 2.0
-                    pr_status = pr.status
                 except psutil.NoSuchProcess:  # pragma: no cover
                     break
 
@@ -251,9 +249,10 @@ def monitor(
                     read_bytes = counters.read_bytes
                     write_bytes = counters.write_bytes
 
-                n_proc = 1
+                n_proc = 1             
 
-                # Get information for children
+
+               # Get information for children
                 if include_children:
                     for child in all_children(pr):
                         with child.oneshot():
@@ -268,9 +267,17 @@ def monitor(
                                     write_count += counters.write_count
                                     read_bytes += counters.read_bytes
                                     write_bytes += counters.write_bytes
+                                child.io_counters_cached = child.io_counters()
                                 n_proc += 1
-                            except Exception:
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
                                 continue
+                            finally:
+                                if hasattr(child, 'io_counters_cached'):
+                                    current_read_count += child.io_counters_cached.read_count
+                                    current_write_count += child.io_counters_cached.write_count
+                                    current_read_bytes += child.io_counters_cached.read_bytes
+                                    current_write_bytes += child.io_counters_cached.write_byte                         
+
 
 
             if logfile:
