@@ -130,11 +130,12 @@ def monitor(pid, logfile=None, plot=None, duration=None, interval=None,
         
         f = open(logfile, 'w')
         if directory:
-            f.write("# {0:12s} {1:12s} {2:12s} {3:12s} {4:12s} {5:12s} {6:12s} {7:12s} {8:12s}\n".format(
+            f.write("# {0:12s} {1:12s} {2:12s} {3:12s} {4:12s} {5:12s} {6:12s} {7:12s} {8:12s} {9:12s}\n".format(
                 'Elapsed time'.center(12),
                 'CPU (%)'.center(12),
                 'Real (MB)'.center(12),
                 'Virtual (MB)'.center(12),
+                'Swap (MB)'.center(12),                
                 'Dir (MB)'.center(12),
                 'Read_Count'.center(12),
                 'Write_Count'.center(12),
@@ -182,12 +183,13 @@ def monitor(pid, logfile=None, plot=None, duration=None, interval=None,
                 # Get current CPU and memory
                 try:
                     current_cpu = pr.cpu_percent()
-                    current_mem = pr.memory_info()
+                    current_mem = pr.memory_full_info()
                     current_pio = pr.io_counters()
                 except Exception:
                     break
                 current_mem_real = current_mem.rss / 1024. ** 2
                 current_mem_virtual = current_mem.vms / 1024. ** 2
+                current_mem_swap = current_mem.swap / 1024. ** 2
                 current_read_count = current_pio.read_count
                 current_write_count = current_pio.write_count
                 current_read_bytes = current_pio.read_bytes
@@ -199,9 +201,10 @@ def monitor(pid, logfile=None, plot=None, duration=None, interval=None,
                         with child.oneshot():
                             try:
                                 current_cpu += child.cpu_percent()
-                                current_mem = child.memory_info()
+                                current_mem = child.memory_full_info()
                                 current_mem_real += current_mem.rss / 1024. ** 2
                                 current_mem_virtual += current_mem.vms / 1024. ** 2
+                                current_mem_swap += current_mem.swap / 1024. ** 2
                                 child.io_counters_cached = child.io_counters()
                             except (psutil.NoSuchProcess, psutil.AccessDenied):
                                 pass
@@ -217,11 +220,12 @@ def monitor(pid, logfile=None, plot=None, duration=None, interval=None,
                     try:
                         # If the directory content is actively changing, the filescan and size calculation might fail.
                         current_dir = sum(file.stat().st_size for file in Path(directory).rglob('*')) / 1024.**2
-                        f.write("{0:12.3f} {1:12.3f} {2:12.3f} {3:12.3f} {4:12.3f} {5:12.0f} {6:12.0f} {7:12.3f} {8:12.3f}\n".format(
+                        f.write("{0:12.3f} {1:12.3f} {2:12.3f} {3:12.3f} {4:12.3f} {5:12.3f} {6:12.0f} {7:12.0f} {8:12.3f} {9:12.3f}\n".format(
                             current_time - start_time,
                             current_cpu,
                             current_mem_real,
                             current_mem_virtual,
+                            current_mem_swap,
                             current_dir,
                             current_read_count,
                             current_write_count,
