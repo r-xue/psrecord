@@ -169,11 +169,12 @@ def monitor(
     if logfile:
         if log_format == "plain":
             f.write(
-                "# {:12s} {:12s} {:12s} {:12s}".format(
+                "# {:12s} {:12s} {:12s} {:12s} {:12s}".format(
                     "Elapsed time".center(12),
                     "CPU (%)".center(12),
                     "Real (MB)".center(12),
                     "Virtual (MB)".center(12),
+                    "Swap (MB)".center(12),
                 ),
             )
             if include_io:
@@ -235,12 +236,14 @@ def monitor(
 
                 # Get current CPU and memory
                 try:
-                    current_cpu = get_percent(pr)
-                    current_mem = get_memory(pr)
+                    current_cpu = pr.cpu_percent()
+                    current_mem = pr.memory_full_info()
+                    current_pio = pr.io_counters()
                 except Exception:
                     break
                 current_mem_real = current_mem.rss / 1024.0**2
                 current_mem_virtual = current_mem.vms / 1024.0**2
+                current_mem_swap = current_mem.swap / 1024.0** 2
 
                 if include_io:
                     counters = pr.io_counters()
@@ -249,8 +252,7 @@ def monitor(
                     read_bytes = counters.read_bytes
                     write_bytes = counters.write_bytes
 
-                n_proc = 1             
-
+                n_proc = 1        
 
                # Get information for children
                 if include_children:
@@ -258,15 +260,10 @@ def monitor(
                         with child.oneshot():
                             try:
                                 current_cpu += child.cpu_percent()
-                                current_mem = child.memory_info()
-                                current_mem_real += current_mem.rss / 1024.0**2
-                                current_mem_virtual += current_mem.vms / 1024.0**2
-                                if include_io:
-                                    counters = child.io_counters()
-                                    read_count += counters.read_count
-                                    write_count += counters.write_count
-                                    read_bytes += counters.read_bytes
-                                    write_bytes += counters.write_bytes
+                                current_mem = child.memory_full_info()
+                                current_mem_real += current_mem.rss / 1024. ** 2
+                                current_mem_virtual += current_mem.vms / 1024. ** 2
+                                current_mem_swap += current_mem.swap / 1024. ** 2
                                 child.io_counters_cached = child.io_counters()
                                 n_proc += 1
                             except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -285,6 +282,7 @@ def monitor(
                     f.write(
                         f"{elapsed_time:12.3f} {current_cpu:12.3f}"
                         f" {current_mem_real:12.3f} {current_mem_virtual:12.3f}"
+                        f" {current_mem_sawp:12.3f}"
                     )
                     if include_io:
                         f.write(
