@@ -25,21 +25,11 @@
 
 
 import argparse
-
-from pathlib import Path
-import subprocess
 import sys
 import time
+from pathlib import Path
 
 children = []
-
-
-def get_percent(process):
-    return process.cpu_percent()
-
-
-def get_memory(process):
-    return process.memory_info()
 
 
 def all_children(pr):
@@ -66,8 +56,7 @@ def main():
         "--log",
         type=str,
         help="output the statistics to a file. If neither "
-        "--log nor --plot are specified, print to print "
-        "to standard output.",
+        "--log nor --plot are specified, print to standard output.",
     )
 
     parser.add_argument(
@@ -102,10 +91,13 @@ def main():
     )
 
     parser.add_argument("--include-io", help="include include_io I/O stats", action="store_true")
-             
-    parser.add_argument('--directory', type=str,
-                        help='include the working directory disk usage in statistics (results '
-                             'in a slower maximum sampling rate).')                        
+
+    parser.add_argument(
+        "--include-dir",
+        type=str,
+        help="include the working directory disk usage in statistics (results "
+        "in a slower maximum sampling rate).",
+    )
 
     args = parser.parse_args()
 
@@ -131,7 +123,7 @@ def main():
         include_children=args.include_children,
         include_io=args.include_io,
         log_format=args.log_format,
-        directory=args.directory,
+        include_dir=args.include_dir,
     )
 
     if sprocess is not None:
@@ -147,11 +139,13 @@ def monitor(
     include_children=False,
     include_io=False,
     log_format="plain",
-    directory=None,
+    include_dir=None,
 ):
-
     # We import psutil here so that the module can be imported even if psutil
     # is not present (for example if accessing the version)
+
+    global children
+    children = []  # Reset at start of monitoring
     import psutil
 
     pr = psutil.Process(pid)
@@ -186,12 +180,14 @@ def monitor(
                         "Write bytes".center(12),
                     )
                 )
-            if directory:
+            if include_dir:
                 f.write(" {:12s}".format("Dir size (MB)".center(12)))
         elif log_format == "csv":
-            f.write("elapsed_time,nproc,cpu,mem_real,mem_virtual")
+            f.write("elapsed_time,nproc,cpu,mem_real,mem_virtual,mem_swap")
             if include_io:
                 f.write(",read_count,write_count,read_bytes,write_bytes")
+            if include_dir:
+                f.write(",dir_size_mb")
         else:
             raise ValueError(
                 f"Unknown log format: '{log_format}', should be either 'plain' or 'csv'"
@@ -213,7 +209,7 @@ def monitor(
     try:
         # Start main event loop
         while True:
-            
+
             with pr.oneshot():
 
                 # Find current time
@@ -238,12 +234,11 @@ def monitor(
                 try:
                     current_cpu = pr.cpu_percent()
                     current_mem = pr.memory_full_info()
-                    current_pio = pr.io_counters()
                 except Exception:
                     break
                 current_mem_real = current_mem.rss / 1024.0**2
                 current_mem_virtual = current_mem.vms / 1024.0**2
-                current_mem_swap = current_mem.swap / 1024.0** 2
+                current_mem_swap = current_mem.swap / 1024.0**2
 
                 if include_io:
                     counters = pr.io_counters()
@@ -254,7 +249,7 @@ def monitor(
 
                 n_proc = 1        
 
-               # Get information for children
+                # Get information for children
                 if include_children:
                     for child in all_children(pr):
                         with child.oneshot():
@@ -264,47 +259,55 @@ def monitor(
                                 current_mem_real += current_mem.rss / 1024. ** 2
                                 current_mem_virtual += current_mem.vms / 1024. ** 2
                                 current_mem_swap += current_mem.swap / 1024. ** 2
-                                child.io_counters_cached = child.io_counters()
+                                if include_io:
+                                    counters = child.io_counters()
+                                    read_count += counters.read_count
+                                    write_count += counters.write_count
+                                    read_bytes += counters.read_bytes
+                                    write_bytes += counters.write_bytes
                                 n_proc += 1
                             except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                continue
-                            finally:
-                                if hasattr(child, 'io_counters_cached'):
-                                    current_read_count += child.io_counters_cached.read_count
-                                    current_write_count += child.io_counters_cached.write_count
-                                    current_read_bytes += child.io_counters_cached.read_bytes
-                                    current_write_bytes += child.io_counters_cached.write_byte                         
+                                continue                      
 
-
+            if include_dir:
+                try:
+                    # If the directory content is actively changing, the filescan and size calculation might fail.
+                    current_dir = (
+                        sum(
+                            file.stat().st_size
+                            for file in Path(include_dir).rglob("*")
+                            if file.is_file()
+                        )
+                        / 1024**2
+                    )
+                except (FileNotFoundError, OSError):
+                    current_dir = 0.0
 
             if logfile:
                 if log_format == "plain":
                     f.write(
                         f"{elapsed_time:12.3f} {current_cpu:12.3f}"
                         f" {current_mem_real:12.3f} {current_mem_virtual:12.3f}"
-                        f" {current_mem_sawp:12.3f}"
+                        f" {current_mem_swap:12.3f}"
                     )
                     if include_io:
                         f.write(
                             f" {read_count:12d} {write_count:12d}"
                             f" {read_bytes:12d} {write_bytes:12d}"
                         )
-                    if directory:
-                        try:
-                            # If the directory content is actively changing, the filescan and size calculation might fail.
-                            current_dir = sum(file.stat().st_size for file in Path(directory).rglob('*')) / 1024.**2
-                            f.write(" {4:12.3f}".format(current_dir))
-                            f.flush()
-                        except (FileNotFoundError, subprocess.CalledProcessError):
-                            pass                        
+                    if include_dir:
+                        f.write(f" {current_dir:12.3f}")
+
                 elif log_format == "csv":
                     f.write(
-                        f"{elapsed_time},{n_proc},{current_cpu},{current_mem_real},{current_mem_virtual}"
+                        f"{elapsed_time},{n_proc},{current_cpu},{current_mem_real},{current_mem_virtual},{current_mem_swap}"
                     )
                     if include_io:
                         f.write(f",{read_count},{write_count},{read_bytes},{write_bytes}")
+                    if include_dir:
+                        f.write(f",{current_dir}")
                 f.write("\n")
-                f.flush()   
+                f.flush()
 
             if interval is not None:
                 time.sleep(interval)
