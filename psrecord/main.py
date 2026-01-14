@@ -93,6 +93,12 @@ def main():
     parser.add_argument("--include-io", help="include include_io I/O stats", action="store_true")
 
     parser.add_argument(
+        "--include-cache",
+        action="store_true",
+        help="include pagecache/mmap_rss stats.",
+    )
+
+    parser.add_argument(
         "--include-dir",
         type=str,
         help="include the working directory disk usage in statistics (results "
@@ -124,6 +130,7 @@ def main():
         include_io=args.include_io,
         log_format=args.log_format,
         include_dir=args.include_dir,
+        include_cache=args.include_cache,
     )
 
     if sprocess is not None:
@@ -140,6 +147,7 @@ def monitor(
     include_io=False,
     log_format="plain",
     include_dir=None,
+    include_cache=None,
 ):
     # We import psutil here so that the module can be imported even if psutil
     # is not present (for example if accessing the version)
@@ -149,6 +157,7 @@ def monitor(
     import psutil
 
     pr = psutil.Process(pid)
+
 
     # Record start time
     start_time = time.time()
@@ -182,12 +191,20 @@ def monitor(
                 )
             if include_dir:
                 f.write(" {:12s}".format("Dir size (MB)".center(12)))
+            if include_cache:
+                # RSS of memory-mapped files is part of real memory used by the process
+                f.write(" {:12s}".format("MMap_RSS (MB)".center(12)))
+                f.write(" {:12s}".format("Sys_Cache (GB)".center(12)))
         elif log_format == "csv":
             f.write("elapsed_time,nproc,cpu,mem_real,mem_virtual,mem_swap")
             if include_io:
                 f.write(",read_count,write_count,read_bytes,write_bytes")
             if include_dir:
                 f.write(",dir_size_mb")
+            if include_cache:
+                f.write(",mmap_rss_mb")
+                f.write(",cache_size_mb")
+                f.write(",cache_size_gb")
         else:
             raise ValueError(
                 f"Unknown log format: '{log_format}', should be either 'plain' or 'csv'"
@@ -236,9 +253,15 @@ def monitor(
                     current_mem = pr.memory_full_info()
                 except Exception:
                     break
-                current_mem_real = current_mem.rss / 1024.0**2
-                current_mem_virtual = current_mem.vms / 1024.0**2
-                current_mem_swap = current_mem.swap / 1024.0**2
+                current_mem_real = current_mem.rss / 1024.**2
+                current_mem_virtual = current_mem.vms / 1024.**2
+                current_mem_swap = current_mem.swap / 1024.**2
+                if include_cache:
+                    try:
+                        # Sum up the RSS for all memory-mapped files
+                        current_mmap_rss = sum(m.rss for m in pr.memory_maps()) / 1024**2                                    
+                    except (FileNotFoundError, OSError):
+                        current_mmap_rss = 0.0                
 
                 if include_io:
                     counters = pr.io_counters()
@@ -259,6 +282,8 @@ def monitor(
                                 current_mem_real += current_mem.rss / 1024. ** 2
                                 current_mem_virtual += current_mem.vms / 1024. ** 2
                                 current_mem_swap += current_mem.swap / 1024. ** 2
+                                if include_cache:
+                                    current_mmap_rss += sum(m.rss for m in child.memory_maps()) / 1024**2
                                 if include_io:
                                     counters = child.io_counters()
                                     read_count += counters.read_count
@@ -283,6 +308,14 @@ def monitor(
                 except (FileNotFoundError, OSError):
                     current_dir = 0.0
 
+            if include_cache:
+                try:
+                    vm = psutil.virtual_memory()
+                    # System view of page cached memory
+                    current_cache = (vm.cached) / 1024.**3                           
+                except (FileNotFoundError, OSError):
+                    current_cache = 0.0
+            
             if logfile:
                 if log_format == "plain":
                     f.write(
@@ -297,6 +330,8 @@ def monitor(
                         )
                     if include_dir:
                         f.write(f" {current_dir:12.3f}")
+                    if include_cache:
+                        f.write(f" {current_mmap_rss:12.3f} {current_cache:12.3f}")
 
                 elif log_format == "csv":
                     f.write(
@@ -306,6 +341,8 @@ def monitor(
                         f.write(f",{read_count},{write_count},{read_bytes},{write_bytes}")
                     if include_dir:
                         f.write(f",{current_dir}")
+                    if include_cache:
+                        f.write(f",{current_mmap_rss},{current_cache}")
                 f.write("\n")
                 f.flush()
 
