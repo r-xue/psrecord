@@ -275,7 +275,7 @@ def monitor(
                     break
                 current_mem_real = current_mem.rss / 1024.**2
                 current_mem_virtual = current_mem.vms / 1024.**2
-                current_mem_swap = current_mem.swap / 1024.**2
+                current_mem_swap = getattr(current_mem, 'swap', 0) / 1024.**2
                 if include_cache:
                     try:
                         # Sum up the RSS for all memory-mapped files
@@ -301,7 +301,10 @@ def monitor(
                                 current_mem = child.memory_full_info()
                                 current_mem_real += current_mem.rss / 1024. ** 2
                                 current_mem_virtual += current_mem.vms / 1024. ** 2
-                                current_mem_swap += current_mem.swap / 1024. ** 2
+                                # macOS uses a compressed memory system and unified paging,
+                                # so per-process swap is not easy to get
+                                # on macOS, current.swap doesn't exist
+                                current_mem_swap += getattr(current_mem, 'swap', 0) / 1024. ** 2
                                 if include_cache:
                                     current_mmap_rss += get_unique_path_mmap_rss(child)
                                 if include_io:
