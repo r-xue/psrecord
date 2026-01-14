@@ -205,8 +205,8 @@ def monitor(
                     " {:12s} {:12s} {:12s} {:12s}".format(
                         "Read count".center(12),
                         "Write count".center(12),
-                        "Read bytes".center(12),
-                        "Write bytes".center(12),
+                        "Read (MB)".center(12),
+                        "Write (MB)".center(12),
                     )
                 )
             if include_dir:
@@ -218,12 +218,11 @@ def monitor(
         elif log_format == "csv":
             f.write("elapsed_time,nproc,cpu,mem_real,mem_virtual,mem_swap")
             if include_io:
-                f.write(",read_count,write_count,read_bytes,write_bytes")
+                f.write(",read_count,write_count,read_mb,write_mb")
             if include_dir:
                 f.write(",dir_size_mb")
             if include_cache:
                 f.write(",mmap_rss_mb")
-                f.write(",cache_size_mb")
                 f.write(",cache_size_gb")
         else:
             raise ValueError(
@@ -357,7 +356,7 @@ def monitor(
                     if include_io:
                         f.write(
                             f" {read_count:12d} {write_count:12d}"
-                            f" {read_bytes:12d} {write_bytes:12d}"
+                            f" {read_bytes/1024**2:12.3f} {write_bytes/1024**2:12.3f}"
                         )
                     if include_dir:
                         f.write(f" {current_dir:12.3f}")
@@ -369,7 +368,7 @@ def monitor(
                         f"{elapsed_time},{n_proc},{current_cpu},{current_mem_real},{current_mem_virtual},{current_mem_swap}"
                     )
                     if include_io:
-                        f.write(f",{read_count},{write_count},{read_bytes},{write_bytes}")
+                        f.write(f",{read_count},{write_count},{read_bytes/1024**2},{write_bytes/1024**2}")
                     if include_dir:
                         f.write(f",{current_dir}")
                     if include_cache:
