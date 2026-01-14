@@ -270,7 +270,12 @@ def monitor(
                 # Get current CPU and memory
                 try:
                     current_cpu = pr.cpu_percent()
-                    current_mem = pr.memory_full_info()
+                    # on macOS, memory_full_info() doesn't provide process-specific swap info
+                    # and might also introduce latecy.
+                    if sys.platform == "linux":
+                        current_mem = pr.memory_full_info()
+                    else:
+                        current_mem = pr.memory_info()
                 except Exception:
                     break
                 current_mem_real = current_mem.rss / 1024.**2
@@ -298,7 +303,10 @@ def monitor(
                         with child.oneshot():
                             try:
                                 current_cpu += child.cpu_percent()
-                                current_mem = child.memory_full_info()
+                                if sys.platform == "linux":
+                                    current_mem = child.memory_full_info()
+                                else:
+                                    current_mem = child.memory_info()
                                 current_mem_real += current_mem.rss / 1024. ** 2
                                 current_mem_virtual += current_mem.vms / 1024. ** 2
                                 # macOS uses a compressed memory system and unified paging,
@@ -392,6 +400,11 @@ def monitor(
         f.close()
 
     if plot:
+
+        if not log["times"]:
+            print("Warning: No data points were recorded. Skipping plot generation.")
+            return
+
         # Use non-interactive backend, to enable operation on headless machines
         # We import matplotlib here so that the module can be imported even if
         # matplotlib is not present and the plotting option is unset
