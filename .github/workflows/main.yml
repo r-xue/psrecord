@@ -19,7 +19,6 @@ jobs:
         - linux: py311-test-psutil58-alldeps
         - linux: py312-test-psutil59
 
-        - macos: py39-test-psutil56
         - macos: py310-test-psutil57
         - macos: py311-test-psutil58-alldeps
         - macos: py312-test-psutil59
