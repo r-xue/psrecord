@@ -29,6 +29,8 @@ import sys
 import time
 from pathlib import Path
 
+import psutil
+
 children = []
 
 
@@ -45,6 +47,28 @@ def all_children(pr):
             children.append(child)
 
     return children
+
+
+def get_unique_path_mmap_rss(proc):
+
+    unique_mappings = {}
+
+    try:
+        # memory_maps(grouped=False) gives us the detailed list
+        for m in proc.memory_maps(grouped=False):
+            # If the same file path appears with the same RSS, we check if it's redundant
+            # In some applications, large files are mapped in chunks.
+            if m.path not in unique_mappings:
+                unique_mappings[m.path] = m.rss
+            else:
+                # Logic: If it's a different part of the same file, we might sum it,
+                # but if it's the exact same mapping, we try a rough/conservative update
+                unique_mappings[m.path] = max(unique_mappings[m.path], m.rss)
+
+        total_rss_mib = sum(unique_mappings.values()) / (1024**2)
+        return total_rss_mib
+    except (psutil.AccessDenied, psutil.NoSuchProcess):
+        return 0.0
 
 
 def main():
@@ -149,15 +173,11 @@ def monitor(
     include_dir=None,
     include_cache=None,
 ):
-    # We import psutil here so that the module can be imported even if psutil
-    # is not present (for example if accessing the version)
 
     global children
     children = []  # Reset at start of monitoring
-    import psutil
 
     pr = psutil.Process(pid)
-
 
     # Record start time
     start_time = time.time()
@@ -259,9 +279,9 @@ def monitor(
                 if include_cache:
                     try:
                         # Sum up the RSS for all memory-mapped files
-                        current_mmap_rss = sum(m.rss for m in pr.memory_maps()) / 1024**2                                    
+                        current_mmap_rss = get_unique_path_mmap_rss(pr)
                     except (FileNotFoundError, OSError):
-                        current_mmap_rss = 0.0                
+                        current_mmap_rss = 0.0
 
                 if include_io:
                     counters = pr.io_counters()
@@ -283,7 +303,7 @@ def monitor(
                                 current_mem_virtual += current_mem.vms / 1024. ** 2
                                 current_mem_swap += current_mem.swap / 1024. ** 2
                                 if include_cache:
-                                    current_mmap_rss += sum(m.rss for m in child.memory_maps()) / 1024**2
+                                    current_mmap_rss += get_unique_path_mmap_rss(child)
                                 if include_io:
                                     counters = child.io_counters()
                                     read_count += counters.read_count
@@ -315,7 +335,7 @@ def monitor(
                     current_cache = (vm.cached) / 1024.**3                           
                 except (FileNotFoundError, OSError):
                     current_cache = 0.0
-            
+
             if logfile:
                 if log_format == "plain":
                     f.write(
