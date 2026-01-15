@@ -270,16 +270,16 @@ def monitor(
                 try:
                     current_cpu = pr.cpu_percent()
                     # on macOS, memory_full_info() doesn't provide process-specific swap info
-                    # and might also introduce latecy.
+                    # and might also introduce latency.
                     if sys.platform == "linux":
                         current_mem = pr.memory_full_info()
                     else:
                         current_mem = pr.memory_info()
                 except Exception:
                     break
-                current_mem_real = current_mem.rss / 1024.**2
-                current_mem_virtual = current_mem.vms / 1024.**2
-                current_mem_swap = getattr(current_mem, 'swap', 0) / 1024.**2
+                current_mem_real = current_mem.rss / 1024. ** 2
+                current_mem_virtual = current_mem.vms / 1024. ** 2
+                current_mem_swap = getattr(current_mem, 'swap', 0) / 1024. ** 2
                 if include_cache:
                     try:
                         # Sum up the RSS for all memory-mapped files
@@ -294,7 +294,7 @@ def monitor(
                     read_bytes = counters.read_bytes
                     write_bytes = counters.write_bytes
 
-                n_proc = 1        
+                n_proc = 1
 
                 # Get information for children
                 if include_children:
@@ -322,7 +322,7 @@ def monitor(
                                     write_bytes += counters.write_bytes
                                 n_proc += 1
                             except (psutil.NoSuchProcess, psutil.AccessDenied):
-                                continue                      
+                                continue
 
             if include_dir:
                 try:
