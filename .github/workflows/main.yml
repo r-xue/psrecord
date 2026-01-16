@@ -4,10 +4,10 @@ on:
   push:
     branches:
       - "main"
-  pull_request: 
+  pull_request:
     branches:
       - "**"
-  workflow_dispatch: 
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -23,15 +23,24 @@ jobs:
         - linux: py310-test-psutil57
         - linux: py311-test-psutil58-alldeps
         - linux: py312-test-psutil59
+        - linux: py312-test-alldeps
+        - linux: py313-test
+        - linux: py314-test
 
         - macos: py310-test-psutil57
         - macos: py311-test-psutil58-alldeps
         - macos: py312-test-psutil59
+        - macos: py312-test-alldeps
+        - macos: py313-test
+        - macos: py314-test
 
         - windows: py39-test-psutil56
         - windows: py310-test-psutil57
         - windows: py311-test-psutil58-alldeps
         - windows: py312-test-psutil59
+        - windows: py312-test-alldeps
+        - windows: py313-test
+        - windows: py314-test
 
   # Publish to TestPyPI when tag starts with "test/"
   publish-testpypi:
