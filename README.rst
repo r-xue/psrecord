@@ -2,14 +2,18 @@
 
 
 .. note::
-    
-    This is a forked version of `psrecord <https://github.com/astrofrog/psrecord>`_ (BSD-2) with 
-    additional options emphasizing recording of I/O statistics (directory sizes change, process 
-    swap usage, OS PageCache, MMap RSS usage, etc.) and improved performance by utilizing psutils 
-    `oneshot <https://psutil.readthedocs.io/en/latest/#psutil.Process.oneshot>`_ context manager.
-    This project maintains the BSD-2-Clause license of the original project.
-    See ``LICENSE`` for details.
 
+    This is a forked version of `psrecord
+    <https://github.com/astrofrog/psrecord>`__. It introduces
+    optional I/O statistics recording (including directory size,
+    process swap usage, MMap RSS, and OS PageCache) and enhances
+    performance by utilizing the `psutil
+    <https://github.com/giampaolo/psutil/>`__ `oneshot
+    <https://psutil.readthedocs.io/en/latest/#psutil.Process.oneshot>`_
+    context manager.
+
+    This project maintains the BSD-2-Clause license of the original
+    project. See ``LICENSE`` for details.
 
 About
 =====
