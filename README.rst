@@ -29,8 +29,8 @@ the ``LICENSE`` file.
 Requirements
 ============
 
--  Python 2.7 or 3.3 and higher
--  `psutil <https://code.google.com/p/psutil/>`__ 1.0 or later
+-  Python 3.10 and higher
+-  `psutil <https://code.google.com/p/psutil/>`__ 5.6 or later
 -  `matplotlib <http://www.matplotlib.org>`__ (optional, used for
    plotting)
 
