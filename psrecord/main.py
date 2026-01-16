@@ -114,7 +114,7 @@ def main():
         action="store_true",
     )
 
-    parser.add_argument("--include-io", help="include include_io I/O stats", action="store_true")
+    parser.add_argument("--include-io", help="include I/O stats", action="store_true")
 
     parser.add_argument(
         "--include-cache",
@@ -342,7 +342,7 @@ def monitor(
                 try:
                     vm = psutil.virtual_memory()
                     # System view of page cached memory
-                    current_cache = (vm.cached) / 1024.**3                           
+                    current_cache = (vm.cached) / 1024.**3
                 except (FileNotFoundError, OSError):
                     current_cache = 0.0
 
