@@ -27,16 +27,11 @@
 import argparse
 import sys
 import time
+from pathlib import Path
+
+import psutil
 
 children = []
-
-
-def get_percent(process):
-    return process.cpu_percent()
-
-
-def get_memory(process):
-    return process.memory_info()
 
 
 def all_children(pr):
@@ -54,6 +49,28 @@ def all_children(pr):
     return children
 
 
+def get_unique_path_mmap_rss(proc):
+
+    unique_mappings = {}
+
+    try:
+        # memory_maps(grouped=False) gives us the detailed list
+        for m in proc.memory_maps(grouped=False):
+            # If the same file path appears with the same RSS, we check if it's redundant
+            # In some applications, large files are mapped in chunks.
+            if m.path not in unique_mappings:
+                unique_mappings[m.path] = m.rss
+            else:
+                # Logic: If it's a different part of the same file, we might sum it,
+                # but if it's the exact same mapping, we try a rough/conservative update
+                unique_mappings[m.path] = max(unique_mappings[m.path], m.rss)
+
+        total_rss_mib = sum(unique_mappings.values()) / (1024**2)
+        return total_rss_mib
+    except (psutil.AccessDenied, psutil.NoSuchProcess):
+        return 0.0
+
+
 def main():
     parser = argparse.ArgumentParser(description="Record CPU and memory usage for a process")
 
@@ -63,8 +80,7 @@ def main():
         "--log",
         type=str,
         help="output the statistics to a file. If neither "
-        "--log nor --plot are specified, print to print "
-        "to standard output.",
+        "--log nor --plot are specified, print to standard output.",
     )
 
     parser.add_argument(
@@ -98,7 +114,20 @@ def main():
         action="store_true",
     )
 
-    parser.add_argument("--include-io", help="include include_io I/O stats", action="store_true")
+    parser.add_argument("--include-io", help="include I/O stats", action="store_true")
+
+    parser.add_argument(
+        "--include-cache",
+        action="store_true",
+        help="include pagecache/mmap_rss stats.",
+    )
+
+    parser.add_argument(
+        "--include-dir",
+        type=str,
+        help="include the working directory disk usage in statistics (results "
+        "in a slower maximum sampling rate).",
+    )
 
     args = parser.parse_args()
 
@@ -124,6 +153,8 @@ def main():
         include_children=args.include_children,
         include_io=args.include_io,
         log_format=args.log_format,
+        include_dir=args.include_dir,
+        include_cache=args.include_cache,
     )
 
     if sprocess is not None:
@@ -139,10 +170,12 @@ def monitor(
     include_children=False,
     include_io=False,
     log_format="plain",
+    include_dir=None,
+    include_cache=None,
 ):
-    # We import psutil here so that the module can be imported even if psutil
-    # is not present (for example if accessing the version)
-    import psutil
+
+    global children
+    children = []  # Reset at start of monitoring
 
     pr = psutil.Process(pid)
 
@@ -159,11 +192,12 @@ def monitor(
     if logfile:
         if log_format == "plain":
             f.write(
-                "# {:12s} {:12s} {:12s} {:12s}".format(
+                "# {:12s} {:12s} {:12s} {:12s} {:12s}".format(
                     "Elapsed time".center(12),
                     "CPU (%)".center(12),
                     "Real (MB)".center(12),
                     "Virtual (MB)".center(12),
+                    "Swap (MB)".center(12),
                 ),
             )
             if include_io:
@@ -171,14 +205,25 @@ def monitor(
                     " {:12s} {:12s} {:12s} {:12s}".format(
                         "Read count".center(12),
                         "Write count".center(12),
-                        "Read bytes".center(12),
-                        "Write bytes".center(12),
+                        "Read (MB)".center(12),
+                        "Write (MB)".center(12),
                     )
                 )
+            if include_dir:
+                f.write(" {:12s}".format("Dir size (MB)".center(12)))
+            if include_cache:
+                # RSS of memory-mapped files is part of real memory used by the process
+                f.write(" {:12s}".format("MMap_RSS (MB)".center(12)))
+                f.write(" {:12s}".format("Sys_Cache (GB)".center(12)))
         elif log_format == "csv":
-            f.write("elapsed_time,nproc,cpu,mem_real,mem_virtual")
+            f.write("elapsed_time,nproc,cpu,mem_real,mem_virtual,mem_swap")
             if include_io:
-                f.write(",read_count,write_count,read_bytes,write_bytes")
+                f.write(",read_count,write_count,read_mb,write_mb")
+            if include_dir:
+                f.write(",dir_size_mb")
+            if include_cache:
+                f.write(",mmap_rss_mb")
+                f.write(",cache_size_gb")
         else:
             raise ValueError(
                 f"Unknown log format: '{log_format}', should be either 'plain' or 'csv'"
@@ -200,79 +245,134 @@ def monitor(
     try:
         # Start main event loop
         while True:
-            # Find current time
-            current_time = time.time()
-            elapsed_time = current_time - start_time
 
-            try:
-                pr_status = pr.status()
-            except TypeError:  # psutil < 2.0
-                pr_status = pr.status
-            except psutil.NoSuchProcess:  # pragma: no cover
-                break
+            with pr.oneshot():
 
-            # Check if process status indicates we should exit
-            if pr_status in [psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD]:
-                print(f"Process finished ({elapsed_time:.2f} seconds)")
-                break
+                # Find current time
+                current_time = time.time()
+                elapsed_time = current_time - start_time
 
-            # Check if we have reached the maximum time
-            if duration is not None and elapsed_time > duration:
-                break
+                try:
+                    pr_status = pr.status()
+                except psutil.NoSuchProcess:  # pragma: no cover
+                    break
 
-            # Get current CPU and memory
-            try:
-                current_cpu = get_percent(pr)
-                current_mem = get_memory(pr)
-            except Exception:
-                break
-            current_mem_real = current_mem.rss / 1024.0**2
-            current_mem_virtual = current_mem.vms / 1024.0**2
+                # Check if process status indicates we should exit
+                if pr_status in [psutil.STATUS_ZOMBIE, psutil.STATUS_DEAD]:
+                    print(f"Process finished ({elapsed_time:.2f} seconds)")
+                    break
 
-            if include_io:
-                counters = pr.io_counters()
-                read_count = counters.read_count
-                write_count = counters.write_count
-                read_bytes = counters.read_bytes
-                write_bytes = counters.write_bytes
+                # Check if we have reached the maximum time
+                if duration is not None and elapsed_time > duration:
+                    break
 
-            n_proc = 1
-
-            # Get information for children
-            if include_children:
-                for child in all_children(pr):
+                # Get current CPU and memory
+                try:
+                    current_cpu = pr.cpu_percent()
+                    # on macOS, memory_full_info() doesn't provide process-specific swap info
+                    # and might also introduce latency.
+                    if sys.platform == "linux":
+                        current_mem = pr.memory_full_info()
+                    else:
+                        current_mem = pr.memory_info()
+                except Exception:
+                    break
+                current_mem_real = current_mem.rss / 1024. ** 2
+                current_mem_virtual = current_mem.vms / 1024. ** 2
+                current_mem_swap = getattr(current_mem, 'swap', 0) / 1024. ** 2
+                if include_cache:
                     try:
-                        current_cpu += get_percent(child)
-                        current_mem = get_memory(child)
-                        current_mem_real += current_mem.rss / 1024.0**2
-                        current_mem_virtual += current_mem.vms / 1024.0**2
-                        if include_io:
-                            counters = child.io_counters()
-                            read_count += counters.read_count
-                            write_count += counters.write_count
-                            read_bytes += counters.read_bytes
-                            write_bytes += counters.write_bytes
-                        n_proc += 1
-                    except Exception:
-                        continue
+                        # Sum up the RSS for all memory-mapped files
+                        current_mmap_rss = get_unique_path_mmap_rss(pr)
+                    except (FileNotFoundError, OSError):
+                        current_mmap_rss = 0.0
+
+                if include_io:
+                    counters = pr.io_counters()
+                    read_count = counters.read_count
+                    write_count = counters.write_count
+                    read_bytes = counters.read_bytes
+                    write_bytes = counters.write_bytes
+
+                n_proc = 1
+
+                # Get information for children
+                if include_children:
+                    for child in all_children(pr):
+                        with child.oneshot():
+                            try:
+                                current_cpu += child.cpu_percent()
+                                if sys.platform == "linux":
+                                    current_mem = child.memory_full_info()
+                                else:
+                                    current_mem = child.memory_info()
+                                current_mem_real += current_mem.rss / 1024. ** 2
+                                current_mem_virtual += current_mem.vms / 1024. ** 2
+                                # macOS uses a compressed memory system and unified paging,
+                                # so per-process swap is not easy to get
+                                # on macOS, current.swap doesn't exist
+                                current_mem_swap += getattr(current_mem, 'swap', 0) / 1024. ** 2
+                                if include_cache:
+                                    current_mmap_rss += get_unique_path_mmap_rss(child)
+                                if include_io:
+                                    counters = child.io_counters()
+                                    read_count += counters.read_count
+                                    write_count += counters.write_count
+                                    read_bytes += counters.read_bytes
+                                    write_bytes += counters.write_bytes
+                                n_proc += 1
+                            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                continue
+
+            if include_dir:
+                try:
+                    # If the directory content is actively changing, the filescan and size calculation might fail.
+                    current_dir = (
+                        sum(
+                            file.stat().st_size
+                            for file in Path(include_dir).rglob("*")
+                            if file.is_file()
+                        )
+                        / 1024**2
+                    )
+                except (FileNotFoundError, OSError):
+                    current_dir = 0.0
+
+            if include_cache:
+                try:
+                    vm = psutil.virtual_memory()
+                    # System view of page cached memory
+                    current_cache = (vm.cached) / 1024.**3
+                except (FileNotFoundError, OSError):
+                    current_cache = 0.0
 
             if logfile:
                 if log_format == "plain":
                     f.write(
                         f"{elapsed_time:12.3f} {current_cpu:12.3f}"
                         f" {current_mem_real:12.3f} {current_mem_virtual:12.3f}"
+                        f" {current_mem_swap:12.3f}"
                     )
                     if include_io:
                         f.write(
                             f" {read_count:12d} {write_count:12d}"
-                            f" {read_bytes:12d} {write_bytes:12d}"
+                            f" {read_bytes/1024**2:12.3f} {write_bytes/1024**2:12.3f}"
                         )
+                    if include_dir:
+                        f.write(f" {current_dir:12.3f}")
+                    if include_cache:
+                        f.write(f" {current_mmap_rss:12.3f} {current_cache:12.3f}")
+
                 elif log_format == "csv":
                     f.write(
-                        f"{elapsed_time},{n_proc},{current_cpu},{current_mem_real},{current_mem_virtual}"
+                        f"{elapsed_time},{n_proc},{current_cpu},{current_mem_real},{current_mem_virtual},{current_mem_swap}"
                     )
                     if include_io:
-                        f.write(f",{read_count},{write_count},{read_bytes},{write_bytes}")
+                        f.write(f",{read_count},{write_count},{read_bytes/1024**2},{write_bytes/1024**2}")
+                    if include_dir:
+                        f.write(f",{current_dir}")
+                    if include_cache:
+                        f.write(f",{current_mmap_rss},{current_cache}")
                 f.write("\n")
                 f.flush()
 
@@ -299,6 +399,11 @@ def monitor(
         f.close()
 
     if plot:
+
+        if not log["times"]:
+            print("Warning: No data points were recorded. Skipping plot generation.")
+            return
+
         # Use non-interactive backend, to enable operation on headless machines
         # We import matplotlib here so that the module can be imported even if
         # matplotlib is not present and the plotting option is unset

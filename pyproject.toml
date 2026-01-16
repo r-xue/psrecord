@@ -4,20 +4,27 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
 version_file = "psrecord/_version.py"
+tag_regex = '^(?:test/)?v(?P<version>[^\\+]+)(?:\\+.*)?$'
 
 [project]
-name = "psrecord"
+name = "psrecord-io"
 dynamic = [
     "version"
 ]
 authors = [
     { name = "Thomas Robitaille", email = "thomas.robitaille@gmail.com" },
+    { name = "Rui Xue", email = "rx.astro@gmail.com" },
+]
+maintainers = [
+    { name = "Rui Xue", email = "rx.astro@gmail.com" }
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
-    "Programming Language :: Python",
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Developers",
     "License :: OSI Approved :: BSD License",
 ]
+keywords = ["psrecord", "fork", "io", "data-processing"]
 description = "Python package to record activity from processes"
 readme = "README.rst"
 dependencies = [
@@ -39,7 +46,8 @@ psrecord = "psrecord.main:main"
 text = "Simplified BSD License"
 
 [project.urls]
-Homepage = "https://github.com/astrofrog/psrecord"
+"Repository" = "https://github.com/r-xue/psrecord"
+"Original Project" = "https://github.com/astrofrog/psrecord"
 
 [tool.setuptools]
 zip-safe = true

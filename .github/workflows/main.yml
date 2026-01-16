@@ -2,38 +2,62 @@ name: CI
 
 on:
   push:
+    branches:
+      - "main"
   pull_request:
+    branches:
+      - "**"
+  workflow_dispatch:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-
   tests:
+    if: github.event_name != 'push' || github.event.pull_request == null
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/tox.yml@v1
     with:
       envs: |
         - linux: py39-test-psutil56
         - linux: py310-test-psutil57
-        - linux: py311-test-psutil58-alldeps
-        - linux: py312-test-psutil59
+        - linux: py312-test-psutil61
+        - linux: py312-test-alldeps
+        - linux: py314-test
 
-        - macos: py39-test-psutil56
         - macos: py310-test-psutil57
-        - macos: py311-test-psutil58-alldeps
-        - macos: py312-test-psutil59
+        - macos: py312-test-psutil61
+        - macos: py312-test-alldeps
+        - macos: py314-test
 
         - windows: py39-test-psutil56
         - windows: py310-test-psutil57
-        - windows: py311-test-psutil58-alldeps
-        - windows: py312-test-psutil59
+        - windows: py312-test-psutil61
+        - windows: py312-test-alldeps
+        - windows: py314-test
 
-  publish:
+  # Publish to TestPyPI when tag starts with "test/"
+  publish-testpypi:
+    if: startsWith(github.ref, 'refs/tags/test/v')
     needs: tests
     uses: OpenAstronomy/github-actions-workflows/.github/workflows/publish_pure_python.yml@v1
     with:
-      test_extras: 'test'
+      test_extras: "test"
       test_command: pytest --pyargs psrecord
+      repository_url: "https://test.pypi.org/legacy/"
+      upload_to_pypi: refs/tags/test/v
     secrets:
-      pypi_token: ${{ secrets.pypi_token }}
+      pypi_token: ${{ secrets.TEST_PYPI_TOKEN }}
+
+  # Publish to PyPI when tag starts with "v" (but not "test/")
+  publish-pypi:
+    if: startsWith(github.ref, 'refs/tags/v') && !startsWith(github.ref, 'refs/tags/test/')
+    needs: tests
+    uses: OpenAstronomy/github-actions-workflows/.github/workflows/publish_pure_python.yml@v1
+    with:
+      test_extras: "test"
+      test_command: pytest --pyargs psrecord
+      # repository_url omitted = defaults to PyPI
+      upload_to_pypi: refs/tags/v
+    secrets:
+      pypi_token: ${{ secrets.PYPI_TOKEN }}

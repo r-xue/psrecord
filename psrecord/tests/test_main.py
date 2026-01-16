@@ -63,12 +63,12 @@ class TestMonitor:
         assert len(open(filename).readlines()) > 0
         with open(filename) as csvfile:
             data = csv.reader(csvfile)
-            assert next(data) == ["elapsed_time", "nproc", "cpu", "mem_real", "mem_virtual"]
+            assert next(data) == ["elapsed_time", "nproc", "cpu", "mem_real", "mem_virtual", "mem_swap"]
 
     def test_plot(self, tmpdir):
         pytest.importorskip("matplotlib")
         filename = tmpdir.join("test_plot.png").strpath
-        monitor(self.p.pid, plot=filename, duration=3)
+        monitor(self.p.pid, plot=filename, duration=6)
         assert os.path.exists(filename)
 
     def test_main(self):
