@@ -8,16 +8,12 @@ tag_regex = '^(?:test/)?v(?P<version>[^\\+]+)(?:\\+.*)?$'
 
 [project]
 name = "psrecord-io"
-dynamic = [
-    "version"
-]
+dynamic = ["version"]
 authors = [
     { name = "Thomas Robitaille", email = "thomas.robitaille@gmail.com" },
     { name = "Rui Xue", email = "rx.astro@gmail.com" },
 ]
-maintainers = [
-    { name = "Rui Xue", email = "rx.astro@gmail.com" }
-]
+maintainers = [{ name = "Rui Xue", email = "rx.astro@gmail.com" }]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Programming Language :: Python :: 3",
@@ -27,17 +23,11 @@ classifiers = [
 keywords = ["psrecord", "fork", "io", "data-processing"]
 description = "Python package to record activity from processes"
 readme = "README.rst"
-dependencies = [
-    "psutil>=5.6",
-]
+dependencies = ["psutil>=5.6"]
 
 [project.optional-dependencies]
-test = [
-    "pytest>=7.0",
-]
-plot = [
-    "matplotlib",
-]
+test = ["pytest>=7.0"]
+plot = ["matplotlib"]
 
 [project.scripts]
 psrecord = "psrecord.main:main"
@@ -51,9 +41,7 @@ text = "Simplified BSD License"
 
 [tool.setuptools]
 zip-safe = true
-provides = [
-    "psrecord",
-]
+provides = ["psrecord"]
 include-package-data = false
 
 [tool.setuptools.packages.find]
