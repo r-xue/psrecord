@@ -27,6 +27,13 @@ jobs:
         - linux: py312-test-alldeps
         - linux: py314-test
 
+        - linux: py312-test-alldeps
+          runs-on: ubuntu-24.04-arm
+          name: py312-test-alldeps (ubuntu-aarch64)
+        - linux: py314-test
+          runs-on: ubuntu-24.04-arm
+          name: py314-test (ubuntu-aarch64)
+
         - macos: py310-test-psutil57
         - macos: py312-test-psutil61
         - macos: py312-test-alldeps
