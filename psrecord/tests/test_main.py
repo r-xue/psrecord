@@ -76,7 +76,7 @@ class TestMonitor:
         main()
 
     def test_main_by_id(self):
-        sys.argv = ["psrecord", "--duration=3", str(os.getpid())]
+        sys.argv = ["psrecord", "--duration=3", "--use-timestamp", str(os.getpid())]
         main()
 
     @pytest.mark.skipif(sys.platform == "darwin", reason="Functionality not supported on MacOS")

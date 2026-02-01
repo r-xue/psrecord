@@ -27,6 +27,7 @@
 import argparse
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 import psutil
@@ -116,6 +117,8 @@ def main():
 
     parser.add_argument("--include-io", help="include I/O stats", action="store_true")
 
+    parser.add_argument("--use-timestamp", help="use UTC timestamp instead of elapsed time", action="store_true")
+
     parser.add_argument(
         "--include-cache",
         action="store_true",
@@ -155,6 +158,7 @@ def main():
         log_format=args.log_format,
         include_dir=args.include_dir,
         include_cache=args.include_cache,
+        use_timestamp=args.use_timestamp,
     )
 
     if sprocess is not None:
@@ -172,6 +176,7 @@ def monitor(
     log_format="plain",
     include_dir=None,
     include_cache=None,
+    use_timestamp=False,
 ):
 
     global children
@@ -191,15 +196,28 @@ def monitor(
 
     if logfile:
         if log_format == "plain":
-            f.write(
-                "# {:12s} {:12s} {:12s} {:12s} {:12s}".format(
-                    "Elapsed time".center(12),
-                    "CPU (%)".center(12),
-                    "Real (MB)".center(12),
-                    "Virtual (MB)".center(12),
-                    "Swap (MB)".center(12),
-                ),
-            )
+            if use_timestamp:
+                f.write(
+                    "# {:19s} {:6s} {:12s} {:12s} {:12s} {:12s}".format(
+                        "Timestamp".center(19),
+                        "NProc".center(6),
+                        "CPU (%)".center(12),
+                        "Real (MB)".center(12),
+                        "Virtual (MB)".center(12),
+                        "Swap (MB)".center(12),
+                    )
+                )
+            else:
+                f.write(
+                    "# {:12s} {:6s} {:12s} {:12s} {:12s} {:12s}".format(
+                        "Elapsed time".center(12),
+                        "NProc".center(6),
+                        "CPU (%)".center(12),
+                        "Real (MB)".center(12),
+                        "Virtual (MB)".center(12),
+                        "Swap (MB)".center(12),
+                    ),
+                )
             if include_io:
                 f.write(
                     " {:12s} {:12s} {:12s} {:12s}".format(
@@ -216,7 +234,10 @@ def monitor(
                 f.write(" {:12s}".format("MMap_RSS (MB)".center(12)))
                 f.write(" {:12s}".format("Sys_Cache (GB)".center(12)))
         elif log_format == "csv":
-            f.write("elapsed_time,nproc,cpu,mem_real,mem_virtual,mem_swap")
+            if use_timestamp:
+                f.write("timestamp,nproc,cpu,mem_real,mem_virtual,mem_swap")
+            else:
+                f.write("elapsed_time,nproc,cpu,mem_real,mem_virtual,mem_swap")
             if include_io:
                 f.write(",read_count,write_count,read_mb,write_mb")
             if include_dir:
@@ -251,6 +272,9 @@ def monitor(
                 # Find current time
                 current_time = time.time()
                 elapsed_time = current_time - start_time
+                if use_timestamp:
+                    # time_stamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-4]
+                    time_stamp = datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%S')
 
                 try:
                     pr_status = pr.status()
@@ -346,12 +370,17 @@ def monitor(
                 except (FileNotFoundError, OSError):
                     current_cache = 0.0
 
+            if use_timestamp:
+                time_str = time_stamp
+            else:
+                time_str = f"{elapsed_time:12.3f}"
+
             if logfile:
                 if log_format == "plain":
                     f.write(
-                        f"{elapsed_time:12.3f} {current_cpu:12.3f}"
-                        f" {current_mem_real:12.3f} {current_mem_virtual:12.3f}"
-                        f" {current_mem_swap:12.3f}"
+                        f'{time_str} {n_proc:6d} {current_cpu:12.3f}'
+                        f' {current_mem_real:12.3f} {current_mem_virtual:12.3f}'
+                        f' {current_mem_swap:12.3f}'
                     )
                     if include_io:
                         f.write(
@@ -365,7 +394,7 @@ def monitor(
 
                 elif log_format == "csv":
                     f.write(
-                        f"{elapsed_time},{n_proc},{current_cpu},{current_mem_real},{current_mem_virtual},{current_mem_swap}"
+                        f"{time_str},{n_proc},{current_cpu},{current_mem_real},{current_mem_virtual},{current_mem_swap}"
                     )
                     if include_io:
                         f.write(f",{read_count},{write_count},{read_bytes/1024**2},{write_bytes/1024**2}")
